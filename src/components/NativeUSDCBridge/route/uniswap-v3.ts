@@ -17,7 +17,7 @@ import {
 import { UniswapRouterCore } from "./uniswap-core";
 import { ETH_TOKEN_INFO } from "../utils/consts";
 import { UsdcLocation } from "./generic";
-import { CHAIN_ID_ETH, ChainId } from "@certusone/wormhole-sdk";
+import { CHAIN_ID_ETH } from "@certusone/wormhole-sdk";
 
 export const PROTOCOL = "UniswapV3";
 

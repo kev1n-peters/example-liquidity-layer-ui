@@ -5,32 +5,35 @@ import NativeSwap from "./components/NativeUSDCBridge/components/NativeSwap";
 import TopLayout from "./TopLayout";
 import { NoSplit } from "./components/NativeUSDCBridge/components/NoSplit";
 import PoweredByIcon from "./components/NativeUSDCBridge/components/PoweredBy";
+import { SnackbarProvider } from "notistack";
 
 const App = () => {
   return (
-    <TopLayout>
+    <SnackbarProvider maxSnack={1}>
       <EthereumProviderProvider>
-        <Container>
-          <Box sx={{ mt: 8, textAlign: "center" }}>
-            <Typography variant="h2" component="h1">
-              <NoSplit>Liquidity Layer Demo</NoSplit>{" "}
-            </Typography>
-          </Box>
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              flexDirection: "column",
-            }}
-          >
-            <NativeSwap />
-            <Box sx={{ mt: 4 }}>
-              <PoweredByIcon color="white" />
+        <TopLayout>
+          <Container>
+            <Box sx={{ mt: 8, textAlign: "center" }}>
+              <Typography variant="h2" component="h1">
+                <NoSplit>Native Swap Demo</NoSplit>{" "}
+              </Typography>
             </Box>
-          </Box>
-        </Container>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                flexDirection: "column",
+              }}
+            >
+              <NativeSwap />
+              <Box sx={{ mt: 4 }}>
+                <PoweredByIcon color="white" />
+              </Box>
+            </Box>
+          </Container>
+        </TopLayout>
       </EthereumProviderProvider>
-    </TopLayout>
+    </SnackbarProvider>
   );
 };
 

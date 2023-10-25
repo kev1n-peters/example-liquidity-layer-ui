@@ -21,7 +21,6 @@ import {
 import {
   CIRCLE_INTEGRATION_ADDRESS_ETHEREUM,
   CIRCLE_INTEGRATION_ADDRESS_AVALANCHE,
-  WORMHOLE_RPC_HOSTS,
   AVAX_TOKEN_INFO,
   ETH_TOKEN_INFO,
   ETH_SWAP_CONTRACT_ADDRESS,
@@ -42,9 +41,7 @@ import {
   NativeSwapV3,
   NativeSwapV3__factory,
 } from "../ethers-contracts/liquiditylayer/types";
-import { handleCircleMessageInLogs } from "../utils/circle";
 import { EVM_RPC_MAP } from "../utils/metaMaskChainParameters";
-import { getSignedVAAWithRetry } from "@certusone/wormhole-sdk";
 
 function makeNullSwapPath(): any[] {
   const zeroBuffer = Buffer.alloc(20);
@@ -261,34 +258,6 @@ async function evmApproveAndSwapExactIn(
   }
 }
 
-async function swapExactInFromVaa(
-  dstProvider: ethers.providers.Provider,
-  dstWallet: ethers.Signer,
-  dstExecutionParams: ExecutionParameters,
-  dstProtocol: string,
-  encodedWormholeMessage: Uint8Array,
-  circleBridgeMessage: string,
-  circleAttestation: string
-): Promise<TransactionReceipt> {
-  throw new Error("swap in not implemented");
-  /*
-  const swapContractParams = dstExecutionParams.crossChainSwap;
-
-  const contractWithSigner = makeCrossChainSwapEvmContract(
-    dstWallet,
-    dstProtocol,
-    swapContractParams.address
-  );
-
-  return evmSwapExactInFromVaaNative(
-    contractWithSigner,
-    encodedWormholeMessage,
-    circleBridgeMessage,
-    circleAttestation
-  );
-  */
-}
-
 interface VaaSearchParams {
   sequence: string;
   emitterAddress: string;
@@ -481,6 +450,7 @@ export class UniswapToUniswapExecutor {
       throw Error("wormholeParams is null");
     }
 
+    // TODO: refactor this to be scalable, fetch route info from contracts
     const emitterAddress =
       (this.srcExecutionParams?.wormhole.circleIntegrationAddress &&
         this.dstExecutionParams?.wormhole.circleIntegrationAddress) ||
@@ -495,76 +465,5 @@ export class UniswapToUniswapExecutor {
       ),
       emitterAddress: getEmitterAddressEth(emitterAddress!),
     };
-  }
-
-  async fetchSignedVaaFromSwap(): Promise<void> {
-    // TODO: hit circle api for signature
-    const vaaSearchParams = this.vaaSearchParams;
-    if (!vaaSearchParams) {
-      throw Error("no vaa search params found");
-    }
-    if (!this.srcExecutionParams) {
-      throw Error("srcExecutionParams is null");
-    }
-    const sequence = vaaSearchParams.sequence;
-    const emitterAddress = vaaSearchParams.emitterAddress;
-    // wait for VAA to be signed
-
-    const vaaResponse = await getSignedVAAWithRetry(
-      WORMHOLE_RPC_HOSTS,
-      this.srcExecutionParams.wormhole.chainId,
-      vaaSearchParams.emitterAddress,
-      vaaSearchParams.sequence,
-      {
-        transport: this.transportFactory,
-      }
-    );
-    // grab vaaBytes
-    this.vaaBytes = vaaResponse.vaaBytes;
-  }
-
-  async fetchVaaAndSwap(wallet: ethers.Signer): Promise<TransactionReceipt> {
-    await this.fetchSignedVaaFromSwap();
-
-    this.dstEvmReceipt = await this.evmSwapExactInFromVaa(wallet);
-
-    return this.dstEvmReceipt;
-  }
-
-  async evmSwapExactInFromVaa(
-    wallet: ethers.Signer
-  ): Promise<TransactionReceipt> {
-    if (
-      !this.dstExecutionParams ||
-      !this.cachedExactInParams ||
-      !this.vaaBytes
-    ) {
-      throw Error("invalid params");
-    }
-    const [circleBridgeMessage, circleAttestation] =
-      await handleCircleMessageInLogs(
-        this.srcEvmReceipt?.logs || [],
-        this.srcExecutionParams?.wormhole.circleEmitterAddress || ""
-      );
-    if (circleBridgeMessage === null || circleAttestation === null) {
-      throw new Error(
-        `Error parsing receipt for ${this.srcEvmReceipt?.blockHash}`
-      );
-    }
-    this.circleBridgeMessage = circleBridgeMessage;
-    this.circleAttestation = circleAttestation;
-    return swapExactInFromVaa(
-      this.getDstEvmProvider(),
-      wallet,
-      this.dstExecutionParams,
-      this.cachedExactInParams.dst?.protocol!,
-      this.vaaBytes,
-      this.circleBridgeMessage,
-      this.circleAttestation
-    );
-  }
-
-  setTransport(transportFactory: grpc.TransportFactory) {
-    this.transportFactory = transportFactory;
   }
 }

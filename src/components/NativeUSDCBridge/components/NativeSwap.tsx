@@ -31,6 +31,8 @@ import { fetchTargetChainEvent } from "../utils/fetchRedeemedEvent";
 import ShowTx from "./ShowTx";
 import { getSignedVAAWithRetry } from "@certusone/wormhole-sdk";
 import ChainSelect from "./ChainSelect";
+import { useSnackbar } from "notistack";
+import parseError from "../utils/parseError";
 
 const infoContainer = {
   display: "flex",
@@ -40,17 +42,15 @@ const infoContainer = {
   mx: 0,
 };
 
-// const RELAYER_FEE_USDC = "0.00001";
 // TODO: call this function on the order router: function defaultRelayerFee() external view returns (uint256);
 const RELAYER_FEE_USDC = "0";
+const DEADLINE = "300";
 
 function NativeSwap() {
   const [sourceChain, setSourceChain] = useState<ChainId>(CHAIN_ID_MOONBEAM);
   const [targetChain, setTargetChain] = useState<ChainId>(CHAIN_ID_BSC);
   const [amountIn, setAmountIn] = useState("");
   const [amountOut, setAmountOut] = useState("");
-  const [deadline, setDeadline] = useState("5");
-  const [slippage, setSlippage] = useState("1");
   const [executor, setExecutor] = useState<UniswapToUniswapExecutor | null>(
     null
   );
@@ -61,18 +61,21 @@ function NativeSwap() {
   const [isSourceSwapComplete, setIsSourceSwapComplete] = useState(false);
   const [isTargetSwapComplete, setIsTargetSwapComplete] = useState(false);
   const [targetTxHash, setTargetTxHash] = useState("");
-  const [hasSignedVAA, setHasSignedVAA] = useState(false);
   const [relayerTimeoutString, setRelayerTimeoutString] = useState("");
   const [balance, setBalance] = useState<ethers.BigNumber | null>(null);
+  const [slippage, setSlippage] = useState("0.5");
 
   const { isReady, statusMessage } = useIsWalletReady(
-    // switch to target chain when user must manually redeem
-    isSourceSwapComplete && relayerTimeoutString ? targetChain : sourceChain,
+    // TODO: switch to target chain when user must manually redeem
+    // isSourceSwapComplete && relayerTimeoutString ? targetChain : sourceChain,
+    sourceChain,
     true
   );
 
   const sourceTokenInfo = TOKEN_INFOS.find((t) => t.chainId === sourceChain)!;
   const targetTokenInfo = TOKEN_INFOS.find((t) => t.chainId === targetChain)!;
+
+  const { enqueueSnackbar } = useSnackbar();
 
   useEffect(() => {
     (async () => {
@@ -105,11 +108,7 @@ function NativeSwap() {
       setIsComputingQuote(true);
       setAmountOut("");
       try {
-        if (
-          parseFloat(amountIn) > 0 &&
-          !isNaN(parseFloat(deadline)) &&
-          !isNaN(parseFloat(slippage))
-        ) {
+        if (parseFloat(amountIn) > 0) {
           const executor = new UniswapToUniswapExecutor();
           await executor.initialize(
             sourceTokenInfo.address,
@@ -121,9 +120,10 @@ function NativeSwap() {
           await executor.computeAndVerifyDstPoolAddress().catch((e) => {
             throw new Error("failed to verify dest pool address");
           });
-          executor.setDeadlines((parseFloat(deadline) * 60).toString());
-          executor.setSlippage((parseFloat(slippage) / 100).toString());
+          const slippageDecimal = parseFloat(slippage) / 100;
+          executor.setSlippage(slippageDecimal.toString());
           executor.setRelayerFee(RELAYER_FEE_USDC);
+          executor.setDeadlines(DEADLINE);
           const quote = await executor.computeQuoteExactIn(amountIn);
           setExecutor(executor);
           setAmountOut(parseFloat(quote.minAmountOut).toFixed(8));
@@ -131,33 +131,17 @@ function NativeSwap() {
         }
       } catch (e) {
         console.error(e);
-        //enqueueSnackbar(null, {
-        //  content: <Alert severity="error">{parseError(e)}</Alert>,
-        //});
+        enqueueSnackbar(parseError(e), { variant: "error" });
       }
       setIsComputingQuote(false);
     })();
-  }, [
-    sourceTokenInfo,
-    targetTokenInfo,
-    amountIn,
-    deadline,
-    slippage,
-    //enqueueSnackbar,
-  ]);
+  }, [sourceTokenInfo, targetTokenInfo, amountIn, slippage, enqueueSnackbar]);
 
   const debouncedComputeQuote = useDebouncedCallback(computeQuote, 1000);
 
   useEffect(() => {
     debouncedComputeQuote();
-  }, [
-    sourceTokenInfo,
-    targetTokenInfo,
-    amountIn,
-    deadline,
-    slippage,
-    debouncedComputeQuote,
-  ]);
+  }, [sourceTokenInfo, targetTokenInfo, amountIn, debouncedComputeQuote]);
 
   const handleAmountChange = useCallback((event: any) => {
     setAmountIn(event.target.value);
@@ -165,10 +149,6 @@ function NativeSwap() {
 
   const handleSlippageChange = useCallback((event: any) => {
     setSlippage(event.target.value);
-  }, []);
-
-  const handleDeadlineChange = useCallback((deadline: any) => {
-    setDeadline(deadline);
   }, []);
 
   const handleMaxClick = useCallback(() => {
@@ -192,7 +172,6 @@ function NativeSwap() {
     setIsSwapping(false);
     setHasQuote(false);
     setIsSourceSwapComplete(false);
-    setHasSignedVAA(false);
     setIsTargetSwapComplete(false);
     setAmountIn("");
     setAmountOut("");
@@ -209,7 +188,7 @@ function NativeSwap() {
         return event.target.value;
       });
     },
-    [targetTokenInfo]
+    [targetChain]
   );
 
   const handleTargetChange = useCallback(
@@ -236,7 +215,6 @@ function NativeSwap() {
       try {
         setIsSwapping(true);
         setIsSourceSwapComplete(false);
-        setHasSignedVAA(false);
         setIsTargetSwapComplete(false);
         setRelayerTimeoutString("");
 
@@ -244,7 +222,7 @@ function NativeSwap() {
           signer,
           signerAddress
         );
-        console.log("firstSwapTransactionHash:", sourceReceipt.transactionHash);
+        console.log("sourceChainTxHash:", sourceReceipt.transactionHash);
         setIsSourceSwapComplete(true);
 
         if (!executor.vaaSearchParams) {
@@ -257,7 +235,6 @@ function NativeSwap() {
           executor.vaaSearchParams.emitterAddress,
           executor.vaaSearchParams.sequence
         );
-        setHasSignedVAA(true);
 
         const sequence = parseVaa(vaaBytes).sequence;
 
@@ -284,37 +261,25 @@ function NativeSwap() {
         }
         if (event) {
           setTargetTxHash(event.transactionHash);
+          setIsTargetSwapComplete(true);
+          console.log(`targetChainTxHash: ${event.transactionHash}`);
+          enqueueSnackbar("Transfer complete!", { variant: "success" });
+          setIsSwapping(false);
         } else {
-          // If the relayer hasn't redeemed the signedVAA, then manually redeem it ourselves
           setRelayerTimeoutString("Timed out waiting for relayer.");
-          // TODO: manual redeem
-          //await switchEvmProviderNetwork(provider, targetTokenInfo.chainId);
-          //const targetReceipt = await executor.fetchVaaAndSwap(signer);
-          //console.log(
-          //  "secondSwapTransactionHash:",
-          //  targetReceipt.transactionHash
-          //);
-          //setTargetTxHash(targetReceipt.transactionHash);
+          setIsTargetSwapComplete(false);
+          enqueueSnackbar("Timed out waiting for relayer.", {
+            variant: "warning",
+          });
+          // TODO: If the relayer hasn't redeemed the signedVAA, then manually redeem it ourselves
         }
-        setIsTargetSwapComplete(true);
-        setIsSwapping(false);
       } catch (e: any) {
         reset();
         console.error(e);
-        //enqueueSnackbar(null, {
-        //  content: <Alert severity="error">{parseError(e)}</Alert>,
-        //});
+        enqueueSnackbar(parseError(e), { variant: "error" });
       }
     }
-  }, [
-    provider,
-    signer,
-    signerAddress,
-    executor,
-    sourceTokenInfo,
-    targetTokenInfo,
-    reset,
-  ]);
+  }, [provider, signer, signerAddress, executor, reset, enqueueSnackbar]);
 
   const readyToSwap = provider && signer && hasQuote && isReady;
 
@@ -362,7 +327,6 @@ function NativeSwap() {
             "& > .MuiTypography-root": {
               marginTop: "8px",
             },
-            "& img": { height: 80, maxWidth: 80 },
           }}
         >
           <Typography fontSize={20}>Source</Typography>
@@ -417,31 +381,9 @@ function NativeSwap() {
             "& > .MuiTypography-root": {
               marginTop: "8px",
             },
-            "& img": { height: 80, maxWidth: 80 },
           }}
         >
           <Typography fontSize={20}>Target</Typography>
-          {/*<Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "left",
-              width: "100%",
-              height: "56px",
-              backgroundColor: "rgba(255, 255, 255, 0.1)",
-            }}
-          >
-            <img
-              src={targetTokenInfo.logo}
-              alt={targetTokenInfo.chainName}
-              width="24px"
-              height="24px"
-              style={{ marginLeft: "16px" }}
-            />
-            <Typography sx={{ marginLeft: "16px" }}>
-              {targetTokenInfo.chainName}
-            </Typography>
-          </Box>*/}
           <ChainSelect
             chains={CHAINS}
             variant="outlined"
@@ -486,7 +428,7 @@ function NativeSwap() {
           onChange={handleSlippageChange}
           disabled={shouldLockFields}
         >
-          <MenuItem value={".5"}>0.5%</MenuItem>
+          <MenuItem value={"0.5"}>0.5%</MenuItem>
           <MenuItem value={"1"}>1%</MenuItem>
           <MenuItem value={"1.5"}>1.5%</MenuItem>
           <MenuItem value={"2"}>2%</MenuItem>
@@ -539,7 +481,11 @@ function NativeSwap() {
               : 0
           }
           alternativeLabel
-          sx={{ width: "100%", mb: 1 }}
+          sx={{
+            width: "100%",
+            mb: 1,
+            "& .MuiStepLabel-root .Mui-active": { color: "white" },
+          }}
         >
           <Step>
             <StepLabel>Source Swap</StepLabel>

@@ -5,7 +5,6 @@ import {
   ListItemText,
   OutlinedTextFieldProps,
   TextField,
-  Box,
 } from "@mui/material";
 
 const createChainMenuItem = ({ id, name, logo }: ChainInfo) => (
@@ -23,7 +22,16 @@ interface ChainSelectProps extends OutlinedTextFieldProps {
 
 export default function ChainSelect({ chains, ...rest }: ChainSelectProps) {
   return (
-    <TextField select {...rest}>
+    <TextField
+      select
+      {...rest}
+      sx={{
+        "& .MuiSelect-select": {
+          display: "flex",
+          alignItems: "center",
+        },
+      }}
+    >
       {chains.map((chain) => createChainMenuItem(chain))}
     </TextField>
   );

@@ -60,7 +60,6 @@ function useIsWalletReady(
       }
 
       try {
-        console.log("switching");
         await provider.send("wallet_switchEthereumChain", [
           { chainId: hexStripZeros(hexlify(correctEvmNetwork)) },
         ]);
